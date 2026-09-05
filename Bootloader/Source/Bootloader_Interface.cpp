@@ -12,6 +12,45 @@
 -----------     INCLUDES     -------------
 *****************************************/
 #include "Bootloader_Interface.hpp"
+#include <cstdlib>
+#include <iomanip>
+#include <iostream>
+/*****************************************
+------ FOTA_DEBUG env-gated logger --------
+*****************************************/
+/*
+ * Set FOTA_DEBUG=1 in the environment (e.g. `FOTA_DEBUG=1 Bootloader -r` or
+ * add `Environment=FOTA_DEBUG=1` to the systemd unit) to enable verbose
+ * per-frame trace on stderr. Unset or "0" -> completely silent, zero overhead
+ * beyond a single cached env lookup. Debug output goes to stderr with a
+ * "[FOTA_DEBUG]" prefix so it stays out of the interactive UI on stdout and
+ * lands cleanly in `journalctl -u fota-bootloader -f`.
+ */
+namespace {
+    bool fota_debug()
+    {
+        static const bool enabled = [] {
+            const char* e = std::getenv("FOTA_DEBUG");
+            return e && *e && *e != '0';
+        }();
+        return enabled;
+    }
+    void fota_dbg_hex(const std::string& label,
+                     const std::vector<unsigned char>& data,
+                     std::size_t max_bytes = 32)
+    {
+        if (!fota_debug()) return;
+        std::cerr << "[FOTA_DEBUG] " << label << " (" << data.size() << " B): ";
+        auto n = std::min(max_bytes, data.size());
+        std::cerr << std::hex << std::setfill('0');
+        for (std::size_t i = 0; i < n; ++i)
+            std::cerr << std::setw(2) << static_cast<int>(data[i]) << ' ';
+        if (n < data.size()) std::cerr << "...";
+        std::cerr << std::dec << std::endl;
+    }
+}
+#define FOTA_DBG(msg) \
+    do { if (fota_debug()) std::cerr << "[FOTA_DEBUG] " << msg << std::endl; } while (0)
 /*****************************************
 ----------    GLOBAL DATA     ------------
 *****************************************/
@@ -287,24 +326,28 @@ Services::Services(const std::string &Device_Location)
 *****************************************************************************************************/
 bool Services::Send_Frame(Bootloader_Command_t Service, std::vector<unsigned char> &Data)
 {
+    FOTA_DBG("Send_Frame(cmd+data): cmd=0x" << std::hex << static_cast<int>(Service) << std::dec
+              << " data_len=" << Data.size());
+    fota_dbg_hex("  frame data payload", Data);
     /* Initialize Result as false */
-    bool Result{}; 
+    bool Result{};
     /* Clear Data_Buffer */
-    Data_Buffer.clear(); 
+    Data_Buffer.clear();
     /* Push Service into Data_Buffer */
-    Data_Buffer.push_back(Service); 
+    Data_Buffer.push_back(Service);
     /* Copy Data into Data_Buffer */
-    std::copy(Data.begin(), Data.end(), std::back_inserter(Data_Buffer)); 
+    std::copy(Data.begin(), Data.end(), std::back_inserter(Data_Buffer));
     /* Call Send_Data function */
-    Send_Data(); 
+    Send_Data();
     /* Check if acknowledgement is received */
-    if (Get_Acknowledge()) 
+    if (Get_Acknowledge())
     {
         /* Set Result to true */
-        Result = true; 
+        Result = true;
     }
+    FOTA_DBG("Send_Frame(cmd+data): ACK=" << (Result ? "YES" : "NO (target NACK/timeout)"));
     /* Return Result */
-    return Result; 
+    return Result;
 }
 
 /****************************************************************************************************
@@ -324,6 +367,7 @@ bool Services::Send_Frame(Bootloader_Command_t Service, std::vector<unsigned cha
 *****************************************************************************************************/
 bool Services::Read_File(std::vector<unsigned char> &Binary_File,std::string &File_Location)
 {
+    FOTA_DBG("Read_File: '" << File_Location << "'");
     /* Initialize Status as true */
     bool Status{true};
     /* Open the file */
@@ -339,15 +383,22 @@ bool Services::Read_File(std::vector<unsigned char> &Binary_File,std::string &Fi
         /* Read the file content into the buffer */
         if (!File.read(reinterpret_cast<char*>(Binary_File.data()),Size))
         {
+            FOTA_DBG("Read_File: FAILED to read " << Size << " bytes from '" << File_Location << "'");
             /* If failed to read, set Status to false and clear Binary_File */
             Status=false;
             Binary_File.clear();
+        }
+        else
+        {
+            FOTA_DBG("Read_File: OK, size=" << Binary_File.size() << " bytes");
+            fota_dbg_hex("  first bytes of binary", Binary_File);
         }
         /* Close the file */
         File.close();
     }
     else
     {
+        FOTA_DBG("Read_File: FAILED to open '" << File_Location << "' (does file exist? perms?)");
         /* If failed to open file, set Status to false */
         Status=false;
     }
@@ -370,6 +421,7 @@ bool Services::Read_File(std::vector<unsigned char> &Binary_File,std::string &Fi
 *****************************************************************************************************/
 bool Services::Send_Frame(Bootloader_Command_t Service)
 {
+    FOTA_DBG("Send_Frame(cmd only): cmd=0x" << std::hex << static_cast<int>(Service) << std::dec);
     /* Initialize Result as false */
     bool Result{};
     /* Clear Data_Buffer */
@@ -386,6 +438,7 @@ bool Services::Send_Frame(Bootloader_Command_t Service)
         /* Set Result to true */
         Result=true;
     }
+    FOTA_DBG("Send_Frame(cmd only): ACK=" << (Result ? "YES" : "NO"));
     /* Return Result */
     return Result;
 }
@@ -521,28 +574,39 @@ void Services::Get_Version(void)
 *****************************************************************************************************/
 bool Services::Send_Frame(std::vector<unsigned char> &Data)
 {
+    FOTA_DBG("Send_Frame(payload): starting bulk transfer, total_bytes=" << Data.size()
+              << " chunk_size=250 inter_chunk_delay_ms=" << Sending_Delay_MS);
     /* Initialize Result as true */
     bool Result{true};
+    std::size_t chunk_index{0};
+    const std::size_t total_bytes{Data.size()};
     /* Loop until Data is empty */
     while(Data.size())
     {
         Data_Buffer.clear();
         /* Copy data into Data_Buffer, maximum 250 bytes */
         std::copy(Data.begin(), Data.size() >= 250 ? Data.begin() + 250 : Data.end(), std::back_inserter(Data_Buffer));
+        FOTA_DBG("  chunk #" << chunk_index << ": sending " << Data_Buffer.size()
+                  << " bytes, " << (total_bytes - (chunk_index * 250)) << " total remaining");
         /* Call Send_Data function */
         Send_Data();
         /* Check if acknowledgment is not received */
         if(!Get_Acknowledge())
         {
+            FOTA_DBG("  chunk #" << chunk_index << ": NO ACK -- aborting payload transfer");
             /* Set Result to false and break the loop */
             Result = false;
             break;
         }
+        FOTA_DBG("  chunk #" << chunk_index << ": ACK ok");
         /* Erase sent data from Data */
         Data.erase(Data.begin(), Data.size() >= 250 ? Data.begin() + 250 : Data.end());
         /* Delay sending next frame */
-        std::this_thread::sleep_for(std::chrono::milliseconds(Sending_Delay_MS)); 
+        std::this_thread::sleep_for(std::chrono::milliseconds(Sending_Delay_MS));
+        ++chunk_index;
     }
+    FOTA_DBG("Send_Frame(payload): " << (Result ? "COMPLETED" : "FAILED")
+              << " after " << chunk_index << " chunk(s)");
     /* Return Result */
     return Result;
 }
@@ -613,36 +677,61 @@ bool Services::Set_Application_Information(std::string &File_Location)
     unsigned int Start_Page{Application_Location-1};
     unsigned int Boot_Version_Address{Version_Location};
     unsigned int Application_CRC_Address{CRC_Location};
+    FOTA_DBG("Set_Application_Information: version_raw=0x" << std::hex << Version << std::dec
+              << " erase page=" << Start_Page << " count=" << Total_Pages
+              << " CRC@0x" << std::hex << Application_CRC_Address
+              << " VER@0x" << Boot_Version_Address << std::dec);
     Status=Erase_Flash(Start_Page,Total_Pages);
+    FOTA_DBG("  Erase_Flash(page=" << Start_Page << "): " << (Status ? "OK" : "FAILED"));
     if(Status)
     {
+        const unsigned int crc{Calculate_Application_CRC()};
+        FOTA_DBG("  Calculate_Application_CRC = 0x" << std::hex << crc << std::dec);
         /* Set Version */
-        Status=Write_Data(Application_CRC_Address,Calculate_Application_CRC());
+        Status=Write_Data(Application_CRC_Address,crc);
+        FOTA_DBG("  Write_Data(CRC): " << (Status ? "OK" : "FAILED"));
         /* Set Application CRC */
-        if(Status){Status=Write_Data(Boot_Version_Address,Version);}
+        if(Status){
+            Status=Write_Data(Boot_Version_Address,Version);
+            FOTA_DBG("  Write_Data(VERSION): " << (Status ? "OK" : "FAILED"));
+        }
     }
     return Status;
 }
 bool Services::Flash_Application(unsigned int &Start_Page, std::string &File_Location)
 {
+    FOTA_DBG("Flash_Application: entry, Start_Page=" << Start_Page << " file='" << File_Location << "'");
     std::vector<unsigned char> Payload{};
     bool Status{Read_File(Payload,File_Location)};
     if(Status)
     {
+        const unsigned int num_pages{static_cast<unsigned int>((Payload.size() / 250) + 1)};
+        FOTA_DBG("Flash_Application: payload=" << Payload.size() << " B, num_frames="
+                  << num_pages << " (frame header= [start_page=" << Start_Page
+                  << ", num_frames=" << num_pages << "])");
         /* Prepare data bytes */
         std::vector<unsigned char> Data_Bytes{static_cast<unsigned char>(Start_Page), static_cast<unsigned char>((Payload.size() / 250) + 1)};
         /* Send flash application command */
         Status=Send_Frame(Bootloader_Command_Flash_Application,Data_Bytes);
+        FOTA_DBG("Flash_Application: cmd frame ACK=" << (Status ? "YES" : "NO -- STOPPING"));
         if(Status)
         {
             Status=Send_Frame(Payload);
+            FOTA_DBG("Flash_Application: payload transfer=" << (Status ? "OK" : "FAILED -- STOPPING"));
             /* Send payload */
             if(Status)
             {
                 Status=Set_Application_Information(File_Location);
+                FOTA_DBG("Flash_Application: Set_Application_Information (erase+CRC+version)="
+                          << (Status ? "OK" : "FAILED"));
             }
         }
     }
+    else
+    {
+        FOTA_DBG("Flash_Application: Read_File failed -- nothing sent");
+    }
+    FOTA_DBG("Flash_Application: exit, overall=" << (Status ? "SUCCESS" : "FAIL"));
     return Status;
 }
 
@@ -924,8 +1013,11 @@ bool Services::Get_Acknowledge(void)
 {
     unsigned char Return{};
     Receive_Data(Return);
+    const bool ack{Return == Bootloader_State_ACK};
+    FOTA_DBG("Get_Acknowledge: rx=0x" << std::hex << static_cast<int>(Return)
+              << std::dec << " -> " << (ack ? "ACK" : "NACK/other"));
     /* Check if received data is ACK */
-    return  Return == Bootloader_State_ACK ? true : false;
+    return ack;
 }
 
 /****************************************************************************************************

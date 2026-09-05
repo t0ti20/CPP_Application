@@ -24,152 +24,6 @@ constexpr const char Default[] = "\033[0m";
 namespace Bootloader
 {
 /*****************************************
------------    GPIO_Manage     -----------
-*****************************************/
-/****************************************************************************************************
-* Constructor Name: GPIO_Manage
-* Class           : GPIO_Manage
-* Namespace       : Bootloader
-* Description     : Initializes GPIO management by exporting a specified pin and setting its direction.
-* Parameters (in) : GPIO_Manage_Pin - The GPIO pin number to manage.
-* Parameters (out): None
-* Return value    : None
-* Notes           : - This constructor opens the necessary files for exporting GPIO pins and setting pin direction.
-*                   - It exports the specified pin, sets its direction as output, and prints error messages if any.
-*****************************************************************************************************/
-GPIO_Manage::GPIO_Manage(const std::string &GPIO_Manage_Pin):Pin_Number{GPIO_Manage_Pin}
-{
-    /* Open the file for exporting GPIO pins */
-    Pin_Handlar.open("/sys/class/gpio/export");
-    /* Check if file is successfully opened */
-    if (Pin_Handlar.is_open())
-    {
-        Pin_Handlar<<Pin_Number;
-        Pin_Handlar.flush();
-        Pin_Handlar.close();
-        /* Open the file for setting pin direction */
-        Pin_Handlar.open("/sys/class/gpio/gpio"+Pin_Number+"/direction");
-        if (Pin_Handlar.is_open())
-        {
-            /*  Write "out" to set pin direction as output */
-            Pin_Handlar<<"out";
-            Pin_Handlar.flush();
-            Pin_Handlar.close();
-            /* Set Pin */
-            Set_Pin();
-        }
-        /* Print error message if failed to open direction file */
-        else{std::cout<<"Failed to open direction file."<<std::endl;}
-    }
-    /* Print error message if failed to open export file */
-    else{std::cout<<"Failed to open export file."<<std::endl;}
-}
-
-/****************************************************************************************************
-* Destructor Name : ~GPIO_Manage
-* Class           : GPIO_Manage
-* Namespace       : Bootloader
-* Description     : Destructs GPIO management by unexporting the GPIO pin.
-* Parameters (in) : None
-* Parameters (out): None
-* Return value    : None
-* Notes           : - This destructor opens the necessary file for unexporting GPIO pins.
-*                   - It unexports the specified pin and prints an error message if any.
-*****************************************************************************************************/
-GPIO_Manage::~GPIO_Manage()
-{
-    /* Unexport GPIO pin when object is destroyed */
-    Pin_Handlar.open("/sys/class/gpio/unexport"); 
-    /* Check if file is successfully opened */
-    if (Pin_Handlar.is_open())
-    {
-        Pin_Handlar<<Pin_Number; 
-        Pin_Handlar.flush(); 
-        Pin_Handlar.close(); 
-    }
-    else
-    {
-        /* Print error message if failed to open direction file */
-        std::cout<<"Failed to open direction file."<<std::endl;
-    }
-}
-
-/****************************************************************************************************
-* Function Name   : Halt_MCU
-* Class           : GPIO_Manage
-* Namespace       : Bootloader
-* Description     : Halts the microcontroller by triggering an interrupt to run the bootloader application.
-* Parameters (in) : None
-* Parameters (out): None
-* Return value    : None
-* Notes           : - This function toggles a pin to generate an interrupt, triggering the bootloader application.
-*                   - It first sets the pin, then prints a message, and finally clears the pin.
-*****************************************************************************************************/
-void GPIO_Manage::Halt_MCU(void)
-{
-    /* Toggle Pin To Generate Interrupt To Run Bootloader Application */
-    Clear_Pin();
-    Set_Pin();
-}
-
-/****************************************************************************************************
-* Function Name   : Set_Pin
-* Class           : GPIO_Manage
-* Namespace       : Bootloader
-* Description     : Sets the GPIO pin to a high state.
-* Parameters (in) : None
-* Parameters (out): None
-* Return value    : None
-* Notes           : - This function opens the file for setting the pin value to high.
-*                   - It sets the pin value to "1" to set it high and prints an error message if any.
-*****************************************************************************************************/
-void GPIO_Manage::Set_Pin(void)
-{
-    /* Set pin high */
-    Pin_Handlar.open("/sys/class/gpio/gpio"+Pin_Number+"/value"); 
-    /* Check if file is successfully opened */
-    if (Pin_Handlar.is_open())
-    {
-        Pin_Handlar<<"1"; 
-        Pin_Handlar.flush(); 
-        Pin_Handlar.close(); 
-    }
-    else
-    {
-        /* Print error message if failed to open direction file */
-        std::cout<<"Failed to open direction file."<<std::endl;
-    }
-}
-
-/****************************************************************************************************
-* Function Name   : Clear_Pin
-* Class           : GPIO_Manage
-* Namespace       : Bootloader
-* Description     : Clears the GPIO pin by setting it to a low state.
-* Parameters (in) : None
-* Parameters (out): None
-* Return value    : None
-* Notes           : - This function opens the file for setting the pin value to low.
-*                   - It sets the pin value to "0" to clear it and prints an error message if any.
-*****************************************************************************************************/
-void GPIO_Manage::Clear_Pin(void)
-{
-    Pin_Handlar.open("/sys/class/gpio/gpio" + Pin_Number + "/value"); 
-    /* Check if file is successfully opened */
-    if (Pin_Handlar.is_open())
-    {
-        Pin_Handlar << "0"; 
-        Pin_Handlar.flush(); 
-        Pin_Handlar.close(); 
-    }
-    else
-    {
-        /* Print error message if failed to open direction file */
-        std::cout<<"Failed to open direction file."<<std::endl;
-    }
-}
-
-/*****************************************
 ------------    CRC_Manage     -----------
 *****************************************/
 /****************************************************************************************************
@@ -252,17 +106,15 @@ unsigned int CRC_Manage::CRC_Calculate(const std::vector<unsigned char> &Data)
 * Constructor Name: Serial_Port
 * Class           : Serial_Port
 * Namespace       : Bootloader
-* Description     : Initializes a serial port with specified device location and GPIO pin for control.
+* Description     : Initializes a serial port with the specified device location.
 * Parameters (in) : Device_Location   - The location of the serial device.
-*                   GPIO_Manage_Pin  - The GPIO pin used for managing the serial port.
 * Parameters (out): None
 * Return value    : None
 * Notes           : - This constructor initializes the serial port with specified parameters such as baud rate,
 *                     character size, stop bits, and parity.
-*                   - It also initializes the GPIO management for controlling the serial port.
 *****************************************************************************************************/
-Serial_Port::Serial_Port(const std::string& Device_Location,const std::string &GPIO_Manage_Pin)
-:Port{Input_Output, Device_Location},GPIO_Manage{GPIO_Manage_Pin}
+Serial_Port::Serial_Port(const std::string& Device_Location)
+:Port{Input_Output, Device_Location}
 {
     /* Set baud rate */
     Port.set_option(boost::asio::serial_port_base::baud_rate(115200));
@@ -409,15 +261,14 @@ bool Serial_Port::Receive_Data(unsigned char &Data)
 /****************************************************************************************************
 * Constructor Name: Services
 * Class           : Services
-* Description     : Initializes the Services object with the specified device location and GPIO manage pin.
+* Description     : Initializes the Services object with the specified device location.
 * Parameters (in) : Device_Location - Reference to the string containing the device location.
-*                   GPIO_Manage_Pin - Reference to the string containing the GPIO manage pin.
 * Parameters (out): None
 * Return value    : None
-* Notes           : - This constructor initializes the Services object by calling the constructor of the base class (Serial_Port) with the specified device location and GPIO manage pin.
+* Notes           : - This constructor initializes the Services object by calling the constructor of the base class (Serial_Port) with the specified device location.
 *****************************************************************************************************/
-Services::Services(const std::string &Device_Location,const std::string &GPIO_Manage_Pin)
-:Serial_Port{Device_Location,GPIO_Manage_Pin}{}
+Services::Services(const std::string &Device_Location)
+:Serial_Port{Device_Location}{}
 
 /****************************************************************************************************
 * Function Name   : Send_Frame
@@ -1107,11 +958,13 @@ void Services::Update_Buffer(void)
 * Parameters (in) : None
 * Parameters (out): None
 * Return value    : None
-* Notes           : - This function sends a "Say Bye" command to the controller to exit the bootloader mode.
+* Notes           : - This function sends a "Say Bye" command to the controller to exit the bootloader
+*                     mode; the target resets itself in software (SCB->AIRCR) on receipt, so no
+*                     hardware reset-pin pulse is needed here.
 *****************************************************************************************************/
 void Services::Exit_Bootloader(void)
 {
-    Halt_MCU();
+    Say_Bye();
 }
 
 /****************************************************************************************************
@@ -1214,8 +1067,6 @@ bool Services::Say_Bye(void)
 void Services::Start_Target_Bootloader(void)
 {
     bool Status{true};
-    Halt_MCU();
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
     while(Status)
     {
         Status=!Say_Hi();
@@ -1482,7 +1333,6 @@ void Monitor::Start_Monitoring(void)
 * Class           : User_Interface
 * Description     : Initializes the User_Interface object with the specified parameters.
 * Parameters (in) : User_Interface_File - Reference to the string containing the user interface file.
-*                   GPIO_Manage_Pin     - Reference to the string containing the GPIO manage pin.
 *                   Repository_Path     - Reference to the string containing the repository path.
 *                   Binary_Location     - Reference to the string containing the binary location.
 *                   Arguments           - Reference to the vector containing command-line arguments.
@@ -1491,8 +1341,8 @@ void Monitor::Start_Monitoring(void)
 * Notes           : - This constructor initializes the User_Interface object with the specified parameters.
 *                   - It initializes the Services and Monitor objects.
 *****************************************************************************************************/
-User_Interface::User_Interface(const std::string &User_Interface_File,const std::string &GPIO_Manage_Pin,const std::string &Repository_Path,const std::string &Binary_Location,std::vector<std::string> &Arguments)
-:Services{User_Interface_File,GPIO_Manage_Pin},
+User_Interface::User_Interface(const std::string &User_Interface_File,const std::string &Repository_Path,const std::string &Binary_Location,std::vector<std::string> &Arguments)
+:Services{User_Interface_File},
 Monitor{(*this),Repository_Path,Binary_Location,Arguments}{}
 
 /****************************************************************************************************

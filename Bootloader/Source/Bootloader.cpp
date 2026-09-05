@@ -14,8 +14,6 @@
 /*****************************************
 ---------    Configurations     ----------
 *****************************************/
-/* Old Vesrion Using External Interrupt For Auto Reset */
-constexpr const char GPIO_Pin[]                 {"18"};
 /* Serial Driver Used */
 constexpr const char Serial_Driver[]            {"/dev/ttyS0"};
 /* Repo Location To Be Downloadded */
@@ -35,7 +33,6 @@ int main(int argc, char* argv[])
     User_Interface Application
     {
         Serial_Driver,
-        GPIO_Pin,
         Binary_Repo,
         std::string(Binary_Repo)+std::string(Binary_File),
         Arguments

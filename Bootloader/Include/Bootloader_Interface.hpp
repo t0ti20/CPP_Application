@@ -41,79 +41,6 @@ constexpr unsigned int CRC_Location             {0x8007FE0};
 namespace Bootloader
 {
 /*****************************************
------------    GPIO_Manage     -----------
-*****************************************/
-class GPIO_Manage
-{
-/*************** Methods ****************/
-protected:
-/****************************************************************************************************
-* Constructor Name: GPIO_Manage
-* Class           : GPIO_Manage
-* Namespace       : Bootloader
-* Description     : Initializes GPIO management by exporting a specified pin and setting its direction.
-* Parameters (in) : GPIO_Manage_Pin - The GPIO pin number to manage.
-* Parameters (out): None
-* Return value    : None
-* Notes           : - This constructor opens the necessary files for exporting GPIO pins and setting pin direction.
-*                   - It exports the specified pin, sets its direction as output, and prints error messages if any.
-*****************************************************************************************************/
-GPIO_Manage(const std::string &GPIO_Manage_Pin);
-/****************************************************************************************************
-* Destructor Name : ~GPIO_Manage
-* Class           : GPIO_Manage
-* Namespace       : Bootloader
-* Description     : Destructs GPIO management by unexporting the GPIO pin.
-* Parameters (in) : None
-* Parameters (out): None
-* Return value    : None
-* Notes           : - This destructor opens the necessary file for unexporting GPIO pins.
-*                   - It unexports the specified pin and prints an error message if any.
-*****************************************************************************************************/
-~GPIO_Manage();
-/****************************************************************************************************
-* Function Name   : Halt_MCU
-* Class           : GPIO_Manage
-* Namespace       : Bootloader
-* Description     : Halts the microcontroller by triggering an interrupt to run the bootloader application.
-* Parameters (in) : None
-* Parameters (out): None
-* Return value    : None
-* Notes           : - This function toggles a pin to generate an interrupt, triggering the bootloader application.
-*                   - It first sets the pin, then prints a message, and finally clears the pin.
-*****************************************************************************************************/
-void Halt_MCU(void);
-private:
-/****************************************************************************************************
-* Function Name   : Set_Pin
-* Class           : GPIO_Manage
-* Namespace       : Bootloader
-* Description     : Sets the GPIO pin to a high state.
-* Parameters (in) : None
-* Parameters (out): None
-* Return value    : None
-* Notes           : - This function opens the file for setting the pin value to high.
-*                   - It sets the pin value to "1" to set it high and prints an error message if any.
-*****************************************************************************************************/
-void Set_Pin(void);
-/****************************************************************************************************
-* Function Name   : Clear_Pin
-* Class           : GPIO_Manage
-* Namespace       : Bootloader
-* Description     : Clears the GPIO pin by setting it to a low state.
-* Parameters (in) : None
-* Parameters (out): None
-* Return value    : None
-* Notes           : - This function opens the file for setting the pin value to low.
-*                   - It sets the pin value to "0" to clear it and prints an error message if any.
-*****************************************************************************************************/
-void Clear_Pin(void);
-/*************** Variables **************/
-private:
-std::string Pin_Number{};
-std::ofstream Pin_Handlar;
-};
-/*****************************************
 ------------    CRC_Manage     -----------
 *****************************************/
 class CRC_Manage
@@ -153,7 +80,7 @@ unsigned int CRC_Calculate(const std::vector<unsigned char> &Data);
 /*****************************************
 -----------    Serial Port     -----------
 *****************************************/
-class Serial_Port : protected CRC_Manage ,protected GPIO_Manage
+class Serial_Port : protected CRC_Manage
 {
 /*************** Methods ****************/
 protected:
@@ -161,16 +88,14 @@ protected:
 * Constructor Name: Serial_Port
 * Class           : Serial_Port
 * Namespace       : Bootloader
-* Description     : Initializes a serial port with specified device location and GPIO pin for control.
+* Description     : Initializes a serial port with the specified device location.
 * Parameters (in) : Device_Location   - The location of the serial device.
-*                   GPIO_Manage_Pin  - The GPIO pin used for managing the serial port.
 * Parameters (out): None
 * Return value    : None
 * Notes           : - This constructor initializes the serial port with specified parameters such as baud rate,
 *                     character size, stop bits, and parity.
-*                   - It also initializes the GPIO management for controlling the serial port.
 *****************************************************************************************************/
-Serial_Port(const std::string& Device_Location,const std::string &GPIO_Manage_Pin);
+Serial_Port(const std::string& Device_Location);
 /****************************************************************************************************
 * Function Name   : Send_Data
 * Class           : Serial_Port
@@ -255,14 +180,13 @@ public:
 /****************************************************************************************************
 * Constructor Name: Services
 * Class           : Services
-* Description     : Initializes the Services object with the specified device location and GPIO manage pin.
+* Description     : Initializes the Services object with the specified device location.
 * Parameters (in) : Device_Location - Reference to the string containing the device location.
-*                   GPIO_Manage_Pin - Reference to the string containing the GPIO manage pin.
 * Parameters (out): None
 * Return value    : None
-* Notes           : - This constructor initializes the Services object by calling the constructor of the base class (Serial_Port) with the specified device location and GPIO manage pin.
+* Notes           : - This constructor initializes the Services object by calling the constructor of the base class (Serial_Port) with the specified device location.
 *****************************************************************************************************/
-Services(const std::string &Device_Location,const std::string &GPIO_Manage_Pin);
+Services(const std::string &Device_Location);
 
 
 
@@ -700,7 +624,6 @@ public:
 * Class           : User_Interface
 * Description     : Initializes the User_Interface object with the specified parameters.
 * Parameters (in) : User_Interface_File - Reference to the string containing the user interface file.
-*                   GPIO_Manage_Pin     - Reference to the string containing the GPIO manage pin.
 *                   Repository_Path     - Reference to the string containing the repository path.
 *                   Binary_Location     - Reference to the string containing the binary location.
 *                   Arguments           - Reference to the vector containing command-line arguments.
@@ -709,7 +632,7 @@ public:
 * Notes           : - This constructor initializes the User_Interface object with the specified parameters.
 *                   - It initializes the Services and Monitor objects.
 *****************************************************************************************************/
-User_Interface(const std::string &User_Interface_File,const std::string &GPIO_Manage_Pin,const std::string &Repository_Path,const std::string &Binary_Location,std::vector<std::string> &Arguments);
+User_Interface(const std::string &User_Interface_File,const std::string &Repository_Path,const std::string &Binary_Location,std::vector<std::string> &Arguments);
 /****************************************************************************************************
 * Destructor Name : ~User_Interface
 * Class           : User_Interface

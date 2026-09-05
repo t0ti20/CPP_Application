@@ -1093,28 +1093,33 @@ Monitor::Monitor(Services &User_Interface,const std::string &Repository_Path,con
 :Interface{User_Interface},Binary_Repository{Repository_Path},Directory_Location{Binary_Location},Commands{Arguments}{}
 
 /****************************************************************************************************
-* Function Name   : Get_Update
+* Function Name   : Build_Directory
 * Class           : Monitor
-* Description     : Retrieves updates from the repository using git pull command.
+* Description     : Verifies the local firmware directory exists and records the modification
+*                   time of whatever .bin file (if any) is currently in it, as a baseline for
+*                   Update_Available.
 * Parameters (in) : None
 * Parameters (out): None
-* Return value    : bool - True if the update is successful, false otherwise.
-* Notes           : - This function executes the git pull command to retrieve updates from the repository.
+* Return value    : bool - True if the directory exists, false otherwise.
 *****************************************************************************************************/
-bool Monitor::Get_Update(void)
+bool Monitor::Build_Directory(void)
 {
-    std::string Output{};
     bool Status{};
-    FILE* Checkout_Pipe = popen("git pull origin master 2>&1", "r");
-    if (Checkout_Pipe) 
+    std::error_code Error_Code{};
+    if(std::filesystem::is_directory(Binary_Repository,Error_Code))
     {
-        pclose(Checkout_Pipe);
         Status=true;
+        /* Record whatever is already there as the baseline, so a pre-existing file doesn't
+         * immediately look like a fresh update on the very first check. */
+        std::string Current_File{Directory_Location};
+        if(Interface.Get_File(Current_File))
+        {
+            Last_Write_Time=std::filesystem::last_write_time(Current_File,Error_Code);
+        }
     }
     else
     {
-        /* Error handling if the git checkout command fails */
-        std::cerr << "Error executing git pull command!" << std::endl;
+        std::cerr << "Error: Firmware directory [" << Binary_Repository << "] does not exist." << std::endl;
     }
     return Status;
 }
@@ -1122,92 +1127,26 @@ bool Monitor::Get_Update(void)
 /****************************************************************************************************
 * Function Name   : Update_Available
 * Class           : Monitor
-* Description     : Checks if updates are available in the repository by executing git fetch command.
+* Description     : Checks whether the .bin file in the local firmware directory has a newer
+*                   modification time than the last one seen.
 * Parameters (in) : None
 * Parameters (out): None
-* Return value    : bool - True if updates are available, false otherwise.
-* Notes           : - This function executes the git fetch command to check for updates in the repository.
-*                   - It checks if "origin/master" is found in the command output to determine if updates are available.
+* Return value    : bool - True if the file is new/changed since the last check, false otherwise.
 *****************************************************************************************************/
 bool Monitor::Update_Available(void)
 {
     bool Status{};
-    /* String to store the output of the command */
-    std::string Output{};
-    /* Temporary buffer to read command output */
-    char Temporary_Buffer[128];
-    /* Run Fetch Command To Check For Updates */
-    FILE* Fetch_Pipe = popen("git fetch origin 2>&1", "r");
-    if (Fetch_Pipe)
+    std::string Current_File{Directory_Location};
+    /* Re-resolve the current *.bin match every poll, in case the file name itself changed */
+    if(Interface.Get_File(Current_File))
     {
-        /* Read command output line by line until the end of the pipe */
-        while (!feof(Fetch_Pipe))
+        std::error_code Error_Code{};
+        std::filesystem::file_time_type Modified_Time{std::filesystem::last_write_time(Current_File,Error_Code)};
+        if(!Error_Code && Modified_Time!=Last_Write_Time)
         {
-            if (fgets(Temporary_Buffer, 128, Fetch_Pipe) != nullptr)
-            {
-                /* Append output to the string */
-                Output += Temporary_Buffer;
-            }
+            Last_Write_Time=Modified_Time;
+            Status=true;
         }
-        /* Close the pipe */
-        pclose(Fetch_Pipe);
-        if ((Output.find("origin/master")!=std::string::npos)){Status=true;}
-    }
-    else
-    {
-        /* Error handling if the git fetch command fails */
-        std::cerr << "Error executing git fetch command!" << std::endl;
-    }
-    return Status;
-}
-
-/****************************************************************************************************
-* Function Name   : Build_Directory
-* Class           : Monitor
-* Description     : Changes to the binary repository directory or downloads the binary if directory change fails.
-* Parameters (in) : None
-* Parameters (out): None
-* Return value    : bool - True if directory change or binary download is successful, false otherwise.
-* Notes           : - This function tries to change to the binary repository directory.
-*                   - If the directory change fails, it calls Download_Binary to download the binary.
-*****************************************************************************************************/
-bool Monitor::Build_Directory(void)
-{
-    bool Status{};
-    if (chdir(Binary_Repository.c_str())==0)
-    {
-        Status=true;
-    }
-    else
-    {
-        Status=Download_Binary();
-    }
-    return Status;
-}
-
-/****************************************************************************************************
-* Function Name   : Download_Binary
-* Class           : Monitor
-* Description     : Downloads the binary from the remote repository using git clone command.
-* Parameters (in) : None
-* Parameters (out): None
-* Return value    : bool - True if binary download is successful, false otherwise.
-* Notes           : - This function executes the git clone command to download the binary from the remote repository.
-*****************************************************************************************************/
-bool Monitor::Download_Binary(void)
-{
-    std::string Output{};
-    bool Status{};
-    FILE* Checkout_Pipe = popen(("git clone "+Remote_Repository).c_str(), "r");
-    if (Checkout_Pipe) 
-    {
-        pclose(Checkout_Pipe);
-        Status=true;
-    }
-    else
-    {
-        /* Error handling if the git checkout command fails */
-        std::cerr << "Error executing git clone command!" << std::endl;
     }
     return Status;
 }
@@ -1215,14 +1154,14 @@ bool Monitor::Download_Binary(void)
 /****************************************************************************************************
 * Function Name   : Wait_For_Update
 * Class           : Monitor
-* Description     : Waits for updates by checking for updates in the repository and downloading them if available.
+* Description     : Polls the local firmware directory until a new/changed .bin file appears.
 * Parameters (in) : None
 * Parameters (out): None
 * Return value    : None
 * Notes           : - This function first tries to build the directory by calling Build_Directory.
-*                   - If directory build is successful, it starts monitoring for updates.
-*                   - It continuously checks for updates in the repository using Update_Available.
-*                   - If an update is available, it downloads the update using Get_Update.
+*                   - It then polls Update_Available every Get_Update_Time_Seconds until it reports
+*                     a change - the new binary is already locally present at that point, no
+*                     download step needed.
 *****************************************************************************************************/
 void Monitor::Wait_For_Update(void)
 {
@@ -1236,7 +1175,6 @@ void Monitor::Wait_For_Update(void)
             if(Update_Available())
             {
                 std::cout << "There Is An Update" << std::endl;
-                if(Get_Update()){std::cout << "Done Downloading Update" << std::endl;}
                 break;
             }
             else
@@ -1248,7 +1186,7 @@ void Monitor::Wait_For_Update(void)
     }
     else
     {
-        std::cerr << "Error: Cannot find directory to the Git repository path." << std::endl;
+        std::cerr << "Error: Cannot find the local firmware directory." << std::endl;
     }
 }
 

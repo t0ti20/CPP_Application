@@ -552,63 +552,42 @@ void Update_Application(void);
 /****************************************************************************************************
 * Function Name   : Build_Directory
 * Class           : Monitor
-* Description     : Changes to the binary repository directory or downloads the binary if directory change fails.
+* Description     : Verifies the local firmware directory exists and records the modification
+*                   time of whatever .bin file (if any) is currently in it, as a baseline for
+*                   Update_Available.
 * Parameters (in) : None
 * Parameters (out): None
-* Return value    : bool - True if directory change or binary download is successful, false otherwise.
-* Notes           : - This function tries to change to the binary repository directory.
-*                   - If the directory change fails, it calls Download_Binary to download the binary.
+* Return value    : bool - True if the directory exists, false otherwise.
 *****************************************************************************************************/
 bool Build_Directory(void);
 /****************************************************************************************************
 * Function Name   : Update_Available
 * Class           : Monitor
-* Description     : Checks if updates are available in the repository by executing git fetch command.
+* Description     : Checks whether the .bin file in the local firmware directory has a newer
+*                   modification time than the last one seen.
 * Parameters (in) : None
 * Parameters (out): None
-* Return value    : bool - True if updates are available, false otherwise.
-* Notes           : - This function executes the git fetch command to check for updates in the repository.
-*                   - It checks if "origin/master" is found in the command output to determine if updates are available.
+* Return value    : bool - True if the file is new/changed since the last check, false otherwise.
 *****************************************************************************************************/
 bool Update_Available(void);
 /****************************************************************************************************
-* Function Name   : Download_Binary
-* Class           : Monitor
-* Description     : Downloads the binary from the remote repository using git clone command.
-* Parameters (in) : None
-* Parameters (out): None
-* Return value    : bool - True if binary download is successful, false otherwise.
-* Notes           : - This function executes the git clone command to download the binary from the remote repository.
-*****************************************************************************************************/
-bool Download_Binary(void);
-/****************************************************************************************************
-* Function Name   : Get_Update
-* Class           : Monitor
-* Description     : Retrieves updates from the repository using git pull command.
-* Parameters (in) : None
-* Parameters (out): None
-* Return value    : bool - True if the update is successful, false otherwise.
-* Notes           : - This function executes the git pull command to retrieve updates from the repository.
-*****************************************************************************************************/
-bool Get_Update(void);
-/****************************************************************************************************
 * Function Name   : Wait_For_Update
 * Class           : Monitor
-* Description     : Waits for updates by checking for updates in the repository and downloading them if available.
+* Description     : Polls the local firmware directory until a new/changed .bin file appears.
 * Parameters (in) : None
 * Parameters (out): None
 * Return value    : None
 * Notes           : - This function first tries to build the directory by calling Build_Directory.
-*                   - If directory build is successful, it starts monitoring for updates.
-*                   - It continuously checks for updates in the repository using Update_Available.
-*                   - If an update is available, it downloads the update using Get_Update.
+*                   - It then polls Update_Available every Get_Update_Time_Seconds until it reports
+*                     a change, at which point the new binary is already locally present (no
+*                     download step needed).
 *****************************************************************************************************/
 void Wait_For_Update(void);
 /************** Variables ***************/
 private:
 std::string Binary_Repository{};
-std::string Remote_Repository{"https://github.com/t0ti20/FOTA"};
 std::string Directory_Location{};
+std::filesystem::file_time_type Last_Write_Time{};
 std::vector<std::string> &Commands;
 Services &Interface;
 };

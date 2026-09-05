@@ -16,10 +16,10 @@
 *****************************************/
 /* Serial Driver Used */
 constexpr const char Serial_Driver[]            {"/dev/ttyUSB0"};
-/* Repo Location To Be Downloadded */
-constexpr const char Binary_Repo[]              {"/home/root/FOTA"};
+/* Local Firmware Directory Monitored For New/Changed .bin Files */
+constexpr const char Binary_Repo[]              {"/lib/firmware/stm32f103"};
 /* Application Binary File */
-constexpr const char Binary_File[]              {"/Application/Build/"};
+constexpr const char Binary_File[]              {""};
 /*****************************************
 ----------   Main Application   ----------
 *****************************************/

@@ -15,7 +15,7 @@
 ---------    Configurations     ----------
 *****************************************/
 /* Serial Driver Used */
-constexpr const char Serial_Driver[]            {"/dev/ttyS0"};
+constexpr const char Serial_Driver[]            {"/dev/ttyUSB0"};
 /* Repo Location To Be Downloadded */
 constexpr const char Binary_Repo[]              {"/home/root/FOTA"};
 /* Application Binary File */
